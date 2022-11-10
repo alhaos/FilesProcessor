@@ -22,7 +22,7 @@ class FilesProcessor {
         $clearFilesTable.ExecuteNonQuery()
 
         $insertFile = $this.Connection.CreateCommand()
-        $insertFile.CommandText = "insert into FILES (NAME, LAST_WRITE_TIME, STATUS) values (@NAME, @LAST_WRITE_TIME, 0)"
+        $insertFile.CommandText = "insert into FILES (NAME, LAST_WRITE_TIME, STATUS) values (@NAME, @LAST_WRITE_TIME, 1)"
 
         $name = [SQLiteParameter]::new("@NAME", [DbType]::String)
         $lastWriteTime = [SQLiteParameter]::new("@LAST_WRITE_TIME", [DbType]::String)
@@ -32,30 +32,41 @@ class FilesProcessor {
         
         foreach ($file in [Directory]::GetFiles($this.Conf.WatchedDirectory)) {
             $fileInfo = [FileInfo]::new($file)
-            $lastWriteTime.Value = $fileInfo.LastAccessTime.ToString("yyyy-MM-ddTHH:mm:ss")
+            $lastWriteTime.Value = $fileInfo.LastWriteTime.ToString("yyyy-MM-ddTHH:mm:ss")
             $name.Value = $fileInfo.FullName
             $insertFile.ExecuteNonQuery()
         }
     }
 
-    GetFiles() {
+    [string[]]GetFiles() {
+
+        $newOrChangedFiles = [string[]]::new(0)
+
+        $select = $this.Connection.CreateCommand()
+        $select.CommandText = "select NAME, LAST_WRITE_TIME, STATUS from FILES where NAME = @FILENAME"
+        $filenameParameter = [SQLiteParameter]::new("@FILENAME", [DbType]::String)
+        $select.Parameters.Add($filenameParameter)
+
         foreach ($file in [Directory]::GetFiles($this.Conf.WatchedDirectory)) {
+            
+            $watchedFile = [WatchedFile]::new()
             $fileInfo = [FileInfo]::new($file)
-            $select = $this.Connection.CreateCommand()
-            $select.CommandText = "select NAME, LAST_WRITE_TIME, STATUS from FILES where NAME = @FILENAME"
-            $filenameParameter = [SQLiteParameter]::new("@FILENAME", [DbType]::String)
-            $select.Parameters.Add($filenameParameter)
-            if ($fileInfo.LastAccessTime -ge [datetime]::Now.Subtract([timespan]::new($this.Conf.FileAgeInHours, 0, 0))) {
+            if ($fileInfo.LastWriteTime -ge [datetime]::Now.Subtract([timespan]::new($this.Conf.FileAgeInHours, 0, 0))) {
                 $filenameParameter.Value = $fileInfo.FullName
-                $watchedFile = [WatchedFile]::new()
                 $dataReader = $select.ExecuteReader()
                 while ($dataReader.Read()) {
                     $watchedFile.Name = $dataReader.GetString(0)
                     $watchedFile.LastWriteTime = [datetime]::Parse($dataReader.GetString(1))
                     $watchedFile.Status = $dataReader.GetInt32(2)
                 }
+                $dataReader.Close()
+                if (!$watchedFile.Name -or ($fileInfo.LastWriteTime - $watchedFile.LastWriteTime) -ge [timespan]::new(0,0,1)){
+                    $newOrChangedFiles +=, $fileInfo.FullName
+                }
             }
         }
+
+        return $newOrChangedFiles
     }
 }
 

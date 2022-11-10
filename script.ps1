@@ -4,6 +4,6 @@ $DebugPreference = 'Continue'
 $conf = Import-PowerShellDataFile .\conf.psd1
 
 $FilesProcessor = [FilesProcessor]::new($conf.FilesProcessor)
-$FilesProcessor.Init()
+#$FilesProcessor.Init()
 $FilesProcessor.GetFiles()
 $FilesProcessor.Connection.Close()
